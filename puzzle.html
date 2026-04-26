@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   
   <title>Live Cam Slide Puzzle | Interactive 5x5 Grid Game</title>
-  <title>Live Cam Slide Puzzle | Interactive 5x5 Grid Game</title>
   <meta name="title" content="Live Cam Slide Puzzle | Interactive 5x5 Grid Game">
   <meta name="description" content="A real-time interactive slide puzzle game using your webcam. Shuffle, solve, and save your puzzle portrait in this 5x5 grid challenge built with p5.js.">
   <meta name="keywords" content="p5.js, slide puzzle, webcam game, interactive art, 15 puzzle, 25 puzzle, generative art">
@@ -34,29 +33,27 @@
       justify-content: center;
       align-items: center;
       height: 100vh;
-      font-family: sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     canvas {
       display: block;
-      touch-action: none; /* Prevents scrolling while playing on mobile */
+      touch-action: none; /* Crucial: stops the browser from intercepting swipes */
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
 
-    /* Styling the p5-created button specifically via CSS for cleaner code */
     .save-button {
       background-color: #00ff96 !important;
       color: #141414 !important;
-      padding: 15px 30px !important;
+      padding: 12px 24px !important;
       border: none !important;
-      border-radius: 5px !important;
+      border-radius: 8px !important;
       font-weight: bold !important;
       cursor: pointer !important;
-      box-shadow: 0px 4px 15px rgba(0, 255, 150, 0.3);
-      transition: transform 0.1s ease;
-    }
-
-    .save-button:active {
-      transform: scale(0.95);
+      font-size: 16px !important;
+      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
     }
   </style>
 </head>
@@ -66,25 +63,27 @@
     let cam;
     let tiles = [];
     let board = [];
-    let cols = 5;
-    let rows = 5;
+    let cols = 4;
+    let rows = 4;
     let w, h;
-    let totalTiles = 25;
+    let totalTiles = 16;
+    let puzzleSize;
     let saveBtn;
     let puzzleSolved = false;
 
+    // Swipe tracking
+    let touchStartX = 0;
+    let touchStartY = 0;
+
     function setup() {
       createCanvas(windowWidth, windowHeight);
+      updateLayout();
       
-      // Initialize Camera at the puzzle resolution
       cam = createCapture(VIDEO);
-      cam.size(500, 500);
+      cam.size(640, 480); // Higher res internally for better cropping
       cam.hide();
 
-      w = 500 / cols;
-      h = 500 / rows;
-
-      // Create Tile objects with their fixed source coordinates
+      // Setup tiles
       for (let i = 0; i < totalTiles; i++) {
         let x = (i % cols) * w;
         let y = floor(i / cols) * h;
@@ -92,7 +91,6 @@
         board.push(i);
       }
 
-      // UI: Save Button
       saveBtn = createButton('SAVE IMAGE');
       saveBtn.class('save-button');
       saveBtn.mousePressed(savePuzzleImage);
@@ -101,25 +99,29 @@
       shuffleBoard();
     }
 
+    function updateLayout() {
+      // Responsive: 90% of width on small screens, max 450px on desktops
+      puzzleSize = min(windowWidth * 0.9, 450);
+      w = puzzleSize / cols;
+      h = puzzleSize / rows;
+    }
+
     function draw() {
       background(20);
 
-      // Centering logic
-      let offsetX = (width - 500) / 2;
-      let offsetY = (height - 500) / 2;
+      let offsetX = (width - puzzleSize) / 2;
+      let offsetY = (height - puzzleSize) / 2;
 
-      // Loading state for camera
       if (cam.width === 0) {
         fill(255);
         textAlign(CENTER, CENTER);
-        text("Initializing Camera...", width / 2, height / 2);
+        text("Accessing Camera...", width / 2, height / 2);
         return;
       }
 
       push();
       translate(offsetX, offsetY);
       
-      // Render the current board state
       for (let i = 0; i < board.length; i++) {
         let tileIndex = board[i];
         if (tileIndex !== -1) {
@@ -129,63 +131,83 @@
         }
       }
 
-      // Check for win condition
-      if (!puzzleSolved && isSolved()) {
-        puzzleSolved = true;
-        onSolve(offsetX, offsetY);
-      }
-
-      // Keep showing solved state
       if (puzzleSolved) {
-        // Draw the missing piece to complete the picture
+        // Complete the image
         tiles[totalTiles - 1].display(w * (cols - 1), h * (rows - 1));
         
-        // Overlay
-        fill(0, 255, 150, 220);
-        rect(0, 210, 500, 80, 10);
+        fill(0, 255, 150, 200);
+        rect(0, puzzleSize * 0.42, puzzleSize, puzzleSize * 0.16, 8);
         fill(255);
         textAlign(CENTER, CENTER);
-        textSize(40);
-        text("PUZZLE SOLVED!", 250, 250);
+        textSize(puzzleSize * 0.08);
+        text("SOLVED!", puzzleSize / 2, puzzleSize / 2);
       }
       pop();
     }
 
-    function onSolve(ox, oy) {
-      saveBtn.position(ox + 165, oy + 310);
-      saveBtn.show();
-      // We don't use noLoop() immediately so the button can render
+    // --- INTERACTION LOGIC (SWIPE & TAP) ---
+
+    function touchStarted() {
+      touchStartX = mouseX;
+      touchStartY = mouseY;
+      return false; // Prevent scrolling
     }
 
-    function savePuzzleImage() {
-      let ox = (width - 500) / 2;
-      let oy = (height - 500) / 2;
-      // Capture the specific 500x500 puzzle area
-      let finalPic = get(ox, oy, 500, 500);
-      finalPic.save('solved-puzzle', 'png');
-    }
+    function touchEnded() {
+      if (puzzleSolved) return false;
 
-    function mousePressed() {
-      if (puzzleSolved) return;
+      let dx = mouseX - touchStartX;
+      let dy = mouseY - touchStartY;
 
-      let offsetX = (width - 500) / 2;
-      let offsetY = (height - 500) / 2;
-      let mX = mouseX - offsetX;
-      let mY = mouseY - offsetY;
+      // Tap Detection
+      if (abs(dx) < 15 && abs(dy) < 15) {
+        let offsetX = (width - puzzleSize) / 2;
+        let offsetY = (height - puzzleSize) / 2;
+        let mX = mouseX - offsetX;
+        let mY = mouseY - offsetY;
 
-      // Check if click is within puzzle bounds
-      if (mX > 0 && mX < 500 && mY > 0 && mY < 500) {
-        let i = floor(mX / w);
-        let j = floor(mY / h);
-        let clickedIndex = i + j * cols;
-        moveTile(clickedIndex);
+        if (mX > 0 && mX < puzzleSize && mY > 0 && mY < puzzleSize) {
+          let i = floor(mX / w);
+          let j = floor(mY / h);
+          moveTile(i + j * cols);
+        }
+      } 
+      // Swipe Detection
+      else {
+        let blankIdx = findEmpty();
+        let bX = blankIdx % cols;
+        let bY = floor(blankIdx / cols);
+        let targetIdx = -1;
+
+        if (abs(dx) > abs(dy)) {
+          // Horizontal
+          if (dx > 0) targetIdx = (bX - 1) + bY * cols; // Swipe Right
+          else targetIdx = (bX + 1) + bY * cols;        // Swipe Left
+        } else {
+          // Vertical
+          if (dy > 0) targetIdx = bX + (bY - 1) * cols; // Swipe Down
+          else targetIdx = bX + (bY + 1) * cols;        // Swipe Up
+        }
+
+        if (targetIdx >= 0 && targetIdx < totalTiles) {
+          // Check if the target is actually the neighbor (handles row wraps)
+          if (isNeighbor(targetIdx, blankIdx)) moveTile(targetIdx);
+        }
       }
+      return false;
     }
 
     function moveTile(index) {
       let blankIndex = findEmpty();
       if (isNeighbor(index, blankIndex)) {
         swap(index, blankIndex);
+        if (isSolved()) {
+          puzzleSolved = true;
+          let ox = (width - puzzleSize) / 2;
+          let oy = (height - puzzleSize) / 2;
+          saveBtn.position(ox + (puzzleSize / 2 - 65), oy + puzzleSize + 30);
+          saveBtn.show();
+        }
       }
     }
 
@@ -196,9 +218,7 @@
     }
 
     function findEmpty() {
-      for (let i = 0; i < board.length; i++) {
-        if (board[i] === -1) return i;
-      }
+      return board.indexOf(-1);
     }
 
     function swap(i, j) {
@@ -209,8 +229,7 @@
 
     function shuffleBoard() {
       board[totalTiles - 1] = -1;
-      // High number of moves for a complex 5x5 shuffle
-      for (let i = 0; i < 1500; i++) {
+      for (let i = 0; i < 1000; i++) {
         let blank = findEmpty();
         let neighbors = [];
         for (let j = 0; j < totalTiles; j++) {
@@ -227,26 +246,30 @@
       return true;
     }
 
-    class Tile {
-      constructor(index, sx, sy) {
-        this.homeIndex = index;
-        this.sx = sx; // Source X from video
-        this.sy = sy; // Source Y from video
-      }
-      display(x, y) {
-        image(cam, x, y, w, h, this.sx, this.sy, w, h);
-        stroke(255, 30);
-        noFill();
-        rect(x, y, w, h);
-      }
+    function savePuzzleImage() {
+      let ox = (width - puzzleSize) / 2;
+      let oy = (height - puzzleSize) / 2;
+      let finalPic = get(ox, oy, puzzleSize, puzzleSize);
+      finalPic.save('my-solved-portrait', 'png');
     }
 
     function windowResized() {
       resizeCanvas(windowWidth, windowHeight);
-      if (puzzleSolved) {
-        let ox = (width - 500) / 2;
-        let oy = (height - 500) / 2;
-        saveBtn.position(ox + 165, oy + 310);
+      updateLayout();
+    }
+
+    class Tile {
+      constructor(index, sx, sy) {
+        this.homeIndex = index;
+        // Map the 400px source coords to the actual cam feed aspect ratio
+        this.sx = map(sx, 0, 450, 0, 640);
+        this.sy = map(sy, 0, 450, 0, 480);
+      }
+      display(x, y) {
+        image(cam, x, y, w, h, this.sx, this.sy, 120, 120);
+        stroke(255, 40);
+        noFill();
+        rect(x, y, w, h);
       }
     }
   </script>
